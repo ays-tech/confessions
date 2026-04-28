@@ -1,7 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import ConfessionCard from './ConfessionCard'
-import TagFilter from './TagFilter'
 import SubmitModal from './SubmitModal'
 import { formatNum } from '@/lib/utils'
 import { APP_URL } from '@/lib/config'
@@ -12,7 +11,6 @@ interface Props {
 
 export default function HomeClient({ initialConfessions }: Props) {
   const [confessions, setConfessions] = useState<any[]>(initialConfessions)
-  const [activeTag, setActiveTag]     = useState('All')
   const [sortBy, setSortBy]           = useState<'hot' | 'new'>('hot')
   const [showModal, setShowModal]     = useState(false)
   const [loading, setLoading]         = useState(false)
@@ -20,7 +18,6 @@ export default function HomeClient({ initialConfessions }: Props) {
   const [hasMore, setHasMore]         = useState(true)
   const [shareBanner, setShareBanner] = useState(false)
 
-  // Open modal if ?confess=true (PWA shortcut)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('confess') === 'true') setShowModal(true)
@@ -69,7 +66,6 @@ export default function HomeClient({ initialConfessions }: Props) {
     }
   }
 
-  // Client-side sort for instant feel when toggling
   const displayed = [...confessions].sort((a, b) => {
     if (sortBy === 'hot') {
       const ta = (a.reactions_cry || 0) + (a.reactions_laugh || 0) + (a.reactions_dead || 0)
@@ -104,9 +100,10 @@ export default function HomeClient({ initialConfessions }: Props) {
           background: 'rgba(8,8,8,0.94)',
           backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
           borderBottom: '1px solid rgba(255,255,255,0.06)',
-          padding: '16px 18px 0',
+          padding: '16px 18px 14px',
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          {/* Title + Share */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                 <span style={{ fontSize: 22 }}>😭</span>
@@ -132,13 +129,13 @@ export default function HomeClient({ initialConfessions }: Props) {
             }}>Share App ↗</button>
           </div>
 
-          {/* Sort tabs */}
-          <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+          {/* Sort tabs — Hot & New only */}
+          <div style={{ display: 'flex', gap: 6 }}>
             {(['hot', 'new'] as const).map(val => (
               <button key={val} onClick={() => setSortBy(val)} style={{
                 background: sortBy === val ? 'rgba(255,193,7,0.12)' : 'transparent',
                 border: sortBy === val ? '1px solid rgba(255,193,7,0.32)' : '1px solid rgba(255,255,255,0.08)',
-                borderRadius: 20, padding: '6px 14px',
+                borderRadius: 20, padding: '7px 16px',
                 cursor: 'pointer',
                 color: sortBy === val ? '#FFC107' : 'rgba(255,255,255,0.38)',
                 fontSize: 13, fontWeight: sortBy === val ? 700 : 400,
@@ -148,9 +145,6 @@ export default function HomeClient({ initialConfessions }: Props) {
               </button>
             ))}
           </div>
-
-          {/* Tag filter - kept for browsing existing seed content */}
-          <TagFilter activeTag={activeTag} onTagChange={tag => setActiveTag(tag)} />
         </div>
 
         {/* ── STATS BAR ── */}
@@ -188,7 +182,7 @@ export default function HomeClient({ initialConfessions }: Props) {
             }}>
               <ConfessionCard
                 confession={c}
-                featured={i === 0 && sortBy === 'hot' && activeTag === 'All'}
+                featured={i === 0 && sortBy === 'hot'}
               />
             </div>
           ))}
@@ -236,7 +230,6 @@ export default function HomeClient({ initialConfessions }: Props) {
           </button>
         </div>
 
-        {/* Copy banner */}
         {shareBanner && (
           <div style={{
             position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)',

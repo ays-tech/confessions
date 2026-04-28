@@ -18,44 +18,53 @@ interface Props {
 }
 
 export default function ConfessionCard({ confession, featured = false }: Props) {
-  // Local reaction counts — starts from server value, updated instantly
   const [counts, setCounts] = useState({
     reactions_cry:   confession.reactions_cry   || 0,
     reactions_laugh: confession.reactions_laugh || 0,
     reactions_dead:  confession.reactions_dead  || 0,
   })
+  // null = not reacted, string = which emoji they reacted with (toggle off by clicking again)
   const [reacted, setReacted]   = useState<string | null>(null)
   const [popEmoji, setPopEmoji] = useState<string | null>(null)
   const [copied, setCopied]     = useState(false)
 
-  // Debounce ref — fires DB write 2s after tap, skips if already pending
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const handleReact = (emoji: string) => {
-    if (reacted) return
-
-    const key = EMOJI_TO_KEY[emoji as keyof typeof EMOJI_TO_KEY]
-
-    // 1. Instant local update — no wait
-    setReacted(emoji)
-    setPopEmoji(emoji)
-    setCounts(prev => ({ ...prev, [key]: prev[key] + 1 }))
-    setTimeout(() => setPopEmoji(null), 500)
-
-    // 2. Skip DB entirely for seed data
-    if (String(confession.id).startsWith('seed-')) return
-
-    // 3. Debounced DB write — fires once after 2s
+  const syncToDb = (id: string, emoji: string, action: 'add' | 'remove') => {
+    if (String(id).startsWith('seed-')) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       fetch('/api/reactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: confession.id, emoji }),
-      }).catch(() => {
-        // Silent fail — user already saw the optimistic update
-      })
-    }, 2000)
+        body: JSON.stringify({ id, emoji, action }),
+      }).catch(() => {}) // silent fail — UI already updated
+    }, 1500)
+  }
+
+  const handleReact = (emoji: string) => {
+    const key = EMOJI_TO_KEY[emoji as keyof typeof EMOJI_TO_KEY]
+
+    if (reacted === emoji) {
+      // ── UNLIKE: toggle off ──
+      setReacted(null)
+      setCounts(prev => ({ ...prev, [key]: Math.max(0, prev[key] - 1) }))
+      syncToDb(confession.id, emoji, 'remove')
+    } else {
+      // ── LIKE: switch reaction or new reaction ──
+      if (reacted) {
+        // Remove old reaction count first
+        const oldKey = EMOJI_TO_KEY[reacted as keyof typeof EMOJI_TO_KEY]
+        setCounts(prev => ({ ...prev, [oldKey]: Math.max(0, prev[oldKey] - 1) }))
+        syncToDb(confession.id, reacted, 'remove')
+      }
+      // Add new reaction
+      setReacted(emoji)
+      setPopEmoji(emoji)
+      setCounts(prev => ({ ...prev, [key]: prev[key] + 1 }))
+      syncToDb(confession.id, emoji, 'add')
+      setTimeout(() => setPopEmoji(null), 500)
+    }
   }
 
   const handleShare = (e: React.MouseEvent) => {
@@ -72,7 +81,7 @@ export default function ConfessionCard({ confession, featured = false }: Props) 
     }
   }
 
-  const tagColor = TAG_COLORS[confession.tag] || '#6B7280'
+  const tagColor = confession.tag ? (TAG_COLORS[confession.tag] || '#6B7280') : null
 
   return (
     <div style={{
@@ -85,7 +94,6 @@ export default function ConfessionCard({ confession, featured = false }: Props) 
       boxShadow: featured ? '0 0 32px rgba(255,193,7,0.07)' : '0 4px 24px rgba(0,0,0,0.18)',
     }}>
 
-      {/* Trending badge */}
       {featured && (
         <div style={{
           position: 'absolute', top: -11, left: 18,
@@ -95,9 +103,9 @@ export default function ConfessionCard({ confession, featured = false }: Props) 
         }}>🔥 TRENDING</div>
       )}
 
-      {/* Tag + Time */}
+      {/* Time row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        {confession.tag ? (
+        {tagColor ? (
           <span style={{
             background: tagColor + '20', color: tagColor,
             border: `1px solid ${tagColor}40`,
@@ -110,7 +118,7 @@ export default function ConfessionCard({ confession, featured = false }: Props) 
         </span>
       </div>
 
-      {/* Confession text */}
+      {/* Text */}
       <Link href={`/confession/${confession.id}`} style={{ textDecoration: 'none', display: 'block' }}>
         <p style={{
           fontSize: 15.5, lineHeight: 1.68,
@@ -126,21 +134,23 @@ export default function ConfessionCard({ confession, featured = false }: Props) 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', gap: 7 }}>
           {EMOJIS.map(emoji => {
-            const key = EMOJI_TO_KEY[emoji]
+            const key      = EMOJI_TO_KEY[emoji]
+            const isActive = reacted === emoji
             const isPopping = popEmoji === emoji
             return (
               <button
                 key={emoji}
                 onClick={() => handleReact(emoji)}
+                title={isActive ? 'Tap to unlike' : 'React'}
                 style={{
-                  background: reacted === emoji ? 'rgba(255,255,255,0.11)' : 'rgba(255,255,255,0.04)',
-                  border: reacted === emoji ? '1px solid rgba(255,255,255,0.25)' : '1px solid rgba(255,255,255,0.07)',
+                  background: isActive ? 'rgba(255,255,255,0.13)' : 'rgba(255,255,255,0.04)',
+                  border: isActive ? '1px solid rgba(255,255,255,0.3)' : '1px solid rgba(255,255,255,0.07)',
                   borderRadius: 20,
                   padding: '5px 10px',
-                  cursor: reacted ? 'default' : 'pointer',
+                  cursor: 'pointer',
                   display: 'flex', alignItems: 'center', gap: 4,
-                  color: 'rgba(255,255,255,0.8)',
-                  transition: 'background 0.2s ease',
+                  color: isActive ? '#fff' : 'rgba(255,255,255,0.7)',
+                  transition: 'background 0.15s ease, border 0.15s ease',
                   transform: isPopping ? 'scale(1.3)' : 'scale(1)',
                   fontFamily: "'Sora', sans-serif",
                 }}
@@ -162,8 +172,7 @@ export default function ConfessionCard({ confession, featured = false }: Props) 
             color: copied ? '#50C878' : '#FFC107',
             fontSize: 12, fontWeight: 700,
             display: 'flex', alignItems: 'center', gap: 4,
-            transition: 'all 0.2s',
-            fontFamily: "'Sora', sans-serif",
+            transition: 'all 0.2s', fontFamily: "'Sora', sans-serif",
           }}
         >
           {copied ? '✅ Copied' : 'Share ↗'}
