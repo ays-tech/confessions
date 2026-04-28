@@ -16,24 +16,55 @@ function getSorted(arr: any[], sort: string) {
   )
 }
 
+function getSupabase() {
+  const { createClient } = require('@supabase/supabase-js')
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+}
+
+// Inserts seed confessions into DB if the table is empty.
+// Runs once — subsequent calls are no-ops because count > 0.
+async function maybeInsertSeeds(supabase: any) {
+  const { count } = await supabase
+    .from('confessions')
+    .select('*', { count: 'exact', head: true })
+
+  if (count && count > 0) return // already seeded
+
+  const rows = SEED_CONFESSIONS.map(s => ({
+    text:            s.text,
+    reactions_cry:   s.reactions_cry,
+    reactions_laugh: s.reactions_laugh,
+    reactions_dead:  s.reactions_dead,
+    is_approved:     true,
+    // preserve the original timestamps so sort order makes sense
+    created_at:      s.created_at,
+  }))
+
+  const { error } = await supabase.from('confessions').insert(rows)
+  if (error) console.error('Seed insert error:', error.message)
+  else console.log(`✅ Seeded ${rows.length} confessions into DB`)
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const sort  = searchParams.get('sort') || 'hot'
   const page  = parseInt(searchParams.get('page') || '0')
   const limit = 20
 
-  // No Supabase configured — always return seeds (local dev)
+  // No Supabase — return in-memory seeds (local dev without .env)
   if (!hasSupabase) {
     const seeds = getSorted(SEED_CONFESSIONS, sort)
     return NextResponse.json({ data: seeds.slice(page * limit, (page + 1) * limit) })
   }
 
   try {
-    const { createClient } = await import('@supabase/supabase-js')
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+    const supabase = getSupabase()
+
+    // Seed the DB if empty — this is the fix
+    await maybeInsertSeeds(supabase)
 
     let query = supabase
       .from('confessions')
@@ -43,21 +74,15 @@ export async function GET(request: NextRequest) {
 
     query = sort === 'hot'
       ? query.order('reactions_cry', { ascending: false })
-      : query.order('created_at',    { ascending: false })
+      : query.order('created_at', { ascending: false })
 
     const { data, error } = await query
     if (error) throw error
 
-    // If DB is empty, show seeds so app never feels dead
-    if (!data || data.length === 0) {
-      const seeds = getSorted(SEED_CONFESSIONS, sort)
-      return NextResponse.json({ data: seeds.slice(page * limit, (page + 1) * limit) })
-    }
-
-    return NextResponse.json({ data })
+    return NextResponse.json({ data: data || [] })
   } catch (err) {
     console.error('GET /api/confessions error:', err)
-    // Always fall back to seeds
+    // Fallback to in-memory seeds so page never breaks
     const seeds = getSorted(SEED_CONFESSIONS, sort)
     return NextResponse.json({ data: seeds.slice(page * limit, (page + 1) * limit) })
   }
@@ -87,16 +112,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid content' }, { status: 400 })
     }
 
-    const { createClient } = await import('@supabase/supabase-js')
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+    const supabase = getSupabase()
 
     const { data, error } = await supabase
       .from('confessions')
       .insert([{
-        text: text.trim(),
+        text:            text.trim(),
         reactions_cry:   0,
         reactions_laugh: 0,
         reactions_dead:  0,
