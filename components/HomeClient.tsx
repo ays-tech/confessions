@@ -12,26 +12,24 @@ interface Props {
 
 export default function HomeClient({ initialConfessions }: Props) {
   const [confessions, setConfessions] = useState<any[]>(initialConfessions)
-  const [activeTag, setActiveTag] = useState('All')
-  const [sortBy, setSortBy] = useState<'hot' | 'new'>('hot')
-  const [showModal, setShowModal] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [page, setPage] = useState(0)
-  const [hasMore, setHasMore] = useState(true)
+  const [activeTag, setActiveTag]     = useState('All')
+  const [sortBy, setSortBy]           = useState<'hot' | 'new'>('hot')
+  const [showModal, setShowModal]     = useState(false)
+  const [loading, setLoading]         = useState(false)
+  const [page, setPage]               = useState(0)
+  const [hasMore, setHasMore]         = useState(true)
   const [shareBanner, setShareBanner] = useState(false)
 
-  // Open submit modal if ?confess=true (PWA shortcut)
+  // Open modal if ?confess=true (PWA shortcut)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search)
-      if (params.get('confess') === 'true') setShowModal(true)
-    }
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('confess') === 'true') setShowModal(true)
   }, [])
 
-  const fetchConfessions = useCallback(async (tag: string, sort: string, pageNum: number, replace: boolean) => {
+  const fetchConfessions = useCallback(async (sort: string, pageNum: number, replace: boolean) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/confessions?tag=${encodeURIComponent(tag)}&sort=${sort}&page=${pageNum}`)
+      const res  = await fetch(`/api/confessions?sort=${sort}&page=${pageNum}`)
       const json = await res.json()
       const data = json.data || []
       if (replace) setConfessions(data)
@@ -46,32 +44,13 @@ export default function HomeClient({ initialConfessions }: Props) {
 
   useEffect(() => {
     setPage(0)
-    fetchConfessions(activeTag, sortBy, 0, true)
-  }, [activeTag, sortBy, fetchConfessions])
+    fetchConfessions(sortBy, 0, true)
+  }, [sortBy, fetchConfessions])
 
   const loadMore = () => {
     const next = page + 1
     setPage(next)
-    fetchConfessions(activeTag, sortBy, next, false)
-  }
-
-  const handleReact = async (id: string, emoji: string) => {
-    const keyMap: Record<string, string> = {
-      '😭': 'reactions_cry',
-      '😂': 'reactions_laugh',
-      '💀': 'reactions_dead',
-    }
-    // Optimistic update
-    setConfessions(prev => prev.map(c => {
-      if (c.id !== id) return c
-      const key = keyMap[emoji]
-      return { ...c, [key]: (c[key] || 0) + 1 }
-    }))
-    await fetch('/api/reactions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, emoji }),
-    })
+    fetchConfessions(sortBy, next, false)
   }
 
   const handleSubmitted = (newConfession: any) => {
@@ -90,7 +69,7 @@ export default function HomeClient({ initialConfessions }: Props) {
     }
   }
 
-  // Sort client-side too for instant feel
+  // Client-side sort for instant feel when toggling
   const displayed = [...confessions].sort((a, b) => {
     if (sortBy === 'hot') {
       const ta = (a.reactions_cry || 0) + (a.reactions_laugh || 0) + (a.reactions_dead || 0)
@@ -100,25 +79,22 @@ export default function HomeClient({ initialConfessions }: Props) {
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   })
 
-  const totalReactions = confessions.reduce((sum, c) =>
-    sum + (c.reactions_cry || 0) + (c.reactions_laugh || 0) + (c.reactions_dead || 0), 0)
-
-  const maxCry   = Math.max(0, ...confessions.map(c => c.reactions_cry || 0))
+  const totalReactions = confessions.reduce(
+    (sum, c) => sum + (c.reactions_cry || 0) + (c.reactions_laugh || 0) + (c.reactions_dead || 0), 0
+  )
+  const maxCry   = Math.max(0, ...confessions.map(c => c.reactions_cry   || 0))
   const maxLaugh = Math.max(0, ...confessions.map(c => c.reactions_laugh || 0))
-  const maxDead  = Math.max(0, ...confessions.map(c => c.reactions_dead || 0))
+  const maxDead  = Math.max(0, ...confessions.map(c => c.reactions_dead  || 0))
 
   return (
     <>
       <div style={{
-        minHeight: '100vh',
-        background: '#080808',
-        maxWidth: 540,
-        margin: '0 auto',
-        fontFamily: "'Sora', sans-serif",
-        color: '#fff',
+        minHeight: '100vh', background: '#080808',
+        maxWidth: 540, margin: '0 auto',
+        fontFamily: "'Sora', sans-serif", color: '#fff',
         position: 'relative',
       }}>
-        {/* Ambient background blobs */}
+        {/* Ambient blobs */}
         <div style={{ position: 'fixed', top: -100, left: -100, width: 360, height: 360, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,193,7,0.07) 0%, transparent 70%)', pointerEvents: 'none', zIndex: 0 }} />
         <div style={{ position: 'fixed', bottom: -100, right: -100, width: 300, height: 300, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,107,53,0.06) 0%, transparent 70%)', pointerEvents: 'none', zIndex: 0 }} />
 
@@ -126,12 +102,10 @@ export default function HomeClient({ initialConfessions }: Props) {
         <div style={{
           position: 'sticky', top: 0, zIndex: 100,
           background: 'rgba(8,8,8,0.94)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
+          backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
           borderBottom: '1px solid rgba(255,255,255,0.06)',
           padding: '16px 18px 0',
         }}>
-          {/* Title + Share */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
@@ -168,16 +142,15 @@ export default function HomeClient({ initialConfessions }: Props) {
                 cursor: 'pointer',
                 color: sortBy === val ? '#FFC107' : 'rgba(255,255,255,0.38)',
                 fontSize: 13, fontWeight: sortBy === val ? 700 : 400,
-                transition: 'all 0.2s',
-                fontFamily: "'Sora', sans-serif",
+                transition: 'all 0.2s', fontFamily: "'Sora', sans-serif",
               }}>
                 {val === 'hot' ? '🔥 Hot' : '✨ New'}
               </button>
             ))}
           </div>
 
-          {/* Tag filter */}
-          <TagFilter activeTag={activeTag} onTagChange={tag => { setActiveTag(tag); setPage(0) }} />
+          {/* Tag filter - kept for browsing existing seed content */}
+          <TagFilter activeTag={activeTag} onTagChange={tag => setActiveTag(tag)} />
         </div>
 
         {/* ── STATS BAR ── */}
@@ -187,9 +160,9 @@ export default function HomeClient({ initialConfessions }: Props) {
           borderBottom: '1px solid rgba(255,255,255,0.05)',
         }}>
           {[
-            ['😭', 'Most Felt', formatNum(maxCry)],
-            ['😂', 'Funniest', formatNum(maxLaugh)],
-            ['💀', 'Most Dead', formatNum(maxDead)],
+            ['😭', 'Most Felt',  formatNum(maxCry)],
+            ['😂', 'Funniest',   formatNum(maxLaugh)],
+            ['💀', 'Most Dead',  formatNum(maxDead)],
           ].map(([emoji, label, val]) => (
             <div key={label} style={{ padding: '11px 0', textAlign: 'center' }}>
               <div style={{ fontSize: 17 }}>{emoji}</div>
@@ -199,32 +172,27 @@ export default function HomeClient({ initialConfessions }: Props) {
           ))}
         </div>
 
-        {/* ── CONFESSION FEED ── */}
+        {/* ── FEED ── */}
         <div style={{ padding: '18px 14px 130px' }}>
           {displayed.length === 0 && !loading && (
             <div style={{ textAlign: 'center', padding: '60px 0', color: 'rgba(255,255,255,0.3)' }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>🤷</div>
-              <p style={{ margin: 0, lineHeight: 1.6 }}>No confessions here yet.<br />Be the first to confess!</p>
+              <p style={{ margin: 0, lineHeight: 1.6 }}>No confessions yet.<br />Be the first!</p>
             </div>
           )}
 
           {displayed.map((c, i) => (
-            <div
-              key={c.id}
-              style={{
-                animation: 'fadeSlideUp 0.4s ease both',
-                animationDelay: `${Math.min(i, 5) * 0.06}s`,
-              }}
-            >
+            <div key={c.id} style={{
+              animation: 'fadeSlideUp 0.4s ease both',
+              animationDelay: `${Math.min(i, 5) * 0.06}s`,
+            }}>
               <ConfessionCard
                 confession={c}
-                onReact={handleReact}
                 featured={i === 0 && sortBy === 'hot' && activeTag === 'All'}
               />
             </div>
           ))}
 
-          {/* Load more */}
           {hasMore && !loading && confessions.length > 0 && (
             <button onClick={loadMore} style={{
               width: '100%',
@@ -257,9 +225,8 @@ export default function HomeClient({ initialConfessions }: Props) {
               background: 'linear-gradient(135deg, #FFC107, #FF6B35)',
               border: 'none', borderRadius: 18,
               padding: '17px 24px',
-              fontSize: 16, fontWeight: 700,
-              color: '#000', cursor: 'pointer',
-              fontFamily: "'Sora', sans-serif",
+              fontSize: 16, fontWeight: 700, color: '#000',
+              cursor: 'pointer', fontFamily: "'Sora', sans-serif",
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               letterSpacing: -0.3,
             }}

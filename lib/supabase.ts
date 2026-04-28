@@ -25,8 +25,6 @@ export const supabase = new Proxy({} as SupabaseClient, {
 export type Confession = {
   id: string
   text: string
-  tag: string
-  batch: string
   reactions_cry: number
   reactions_laugh: number
   reactions_dead: number

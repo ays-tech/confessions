@@ -1,42 +1,67 @@
 'use client'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import Link from 'next/link'
 import { TAG_COLORS } from '@/lib/seeds'
 import { formatNum, timeAgo, getShareText } from '@/lib/utils'
 import { APP_URL } from '@/lib/config'
 
 const EMOJIS = ['😭', '😂', '💀'] as const
-const EMOJI_TO_KEY: Record<string, 'reactions_cry' | 'reactions_laugh' | 'reactions_dead'> = {
+const EMOJI_TO_KEY = {
   '😭': 'reactions_cry',
   '😂': 'reactions_laugh',
   '💀': 'reactions_dead',
-}
+} as const
 
 interface Props {
   confession: any
   featured?: boolean
-  onReact: (id: string, emoji: string) => void
 }
 
-export default function ConfessionCard({ confession, featured = false, onReact }: Props) {
-  const [reacted, setReacted] = useState<string | null>(null)
+export default function ConfessionCard({ confession, featured = false }: Props) {
+  // Local reaction counts — starts from server value, updated instantly
+  const [counts, setCounts] = useState({
+    reactions_cry:   confession.reactions_cry   || 0,
+    reactions_laugh: confession.reactions_laugh || 0,
+    reactions_dead:  confession.reactions_dead  || 0,
+  })
+  const [reacted, setReacted]   = useState<string | null>(null)
   const [popEmoji, setPopEmoji] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied]     = useState(false)
 
-  const tagColor = TAG_COLORS[confession.tag] || '#FF6B35'
+  // Debounce ref — fires DB write 2s after tap, skips if already pending
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleReact = (emoji: string) => {
     if (reacted) return
+
+    const key = EMOJI_TO_KEY[emoji as keyof typeof EMOJI_TO_KEY]
+
+    // 1. Instant local update — no wait
     setReacted(emoji)
     setPopEmoji(emoji)
-    onReact(confession.id, emoji)
+    setCounts(prev => ({ ...prev, [key]: prev[key] + 1 }))
     setTimeout(() => setPopEmoji(null), 500)
+
+    // 2. Skip DB entirely for seed data
+    if (String(confession.id).startsWith('seed-')) return
+
+    // 3. Debounced DB write — fires once after 2s
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      fetch('/api/reactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: confession.id, emoji }),
+      }).catch(() => {
+        // Silent fail — user already saw the optimistic update
+      })
+    }, 2000)
   }
 
   const handleShare = (e: React.MouseEvent) => {
     e.preventDefault()
     const shareText = getShareText(confession, APP_URL)
-    const shareUrl = `${APP_URL}/confession/${confession.id}`
+    const shareUrl  = `${APP_URL}/confession/${confession.id}`
     if (navigator.share) {
       navigator.share({ title: 'Corper Confession 😭', text: shareText, url: shareUrl })
     } else {
@@ -46,6 +71,8 @@ export default function ConfessionCard({ confession, featured = false, onReact }
       })
     }
   }
+
+  const tagColor = TAG_COLORS[confession.tag] || '#6B7280'
 
   return (
     <div style={{
@@ -57,6 +84,7 @@ export default function ConfessionCard({ confession, featured = false, onReact }
       position: 'relative',
       boxShadow: featured ? '0 0 32px rgba(255,193,7,0.07)' : '0 4px 24px rgba(0,0,0,0.18)',
     }}>
+
       {/* Trending badge */}
       {featured && (
         <div style={{
@@ -67,27 +95,27 @@ export default function ConfessionCard({ confession, featured = false, onReact }
         }}>🔥 TRENDING</div>
       )}
 
-      {/* Tag + Time row */}
+      {/* Tag + Time */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <span style={{
-          background: tagColor + '20', color: tagColor,
-          border: `1px solid ${tagColor}40`,
-          borderRadius: 20, padding: '3px 10px',
-          fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase',
-        }}>{confession.tag}</span>
+        {confession.tag ? (
+          <span style={{
+            background: tagColor + '20', color: tagColor,
+            border: `1px solid ${tagColor}40`,
+            borderRadius: 20, padding: '3px 10px',
+            fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase',
+          }}>{confession.tag}</span>
+        ) : <span />}
         <span style={{ color: 'rgba(255,255,255,0.28)', fontSize: 12 }}>
-          {confession.batch} · {timeAgo(confession.created_at)}
+          {timeAgo(confession.created_at)}
         </span>
       </div>
 
-      {/* Confession text — tappable to detail page */}
+      {/* Confession text */}
       <Link href={`/confession/${confession.id}`} style={{ textDecoration: 'none', display: 'block' }}>
         <p style={{
-          fontSize: 15.5,
-          lineHeight: 1.68,
+          fontSize: 15.5, lineHeight: 1.68,
           color: 'rgba(255,255,255,0.9)',
-          margin: '0 0 18px',
-          fontWeight: 400,
+          margin: '0 0 18px', fontWeight: 400,
           fontFamily: "'Sora', sans-serif",
         }}>
           "{confession.text}"
@@ -99,7 +127,6 @@ export default function ConfessionCard({ confession, featured = false, onReact }
         <div style={{ display: 'flex', gap: 7 }}>
           {EMOJIS.map(emoji => {
             const key = EMOJI_TO_KEY[emoji]
-            const count = confession[key] || 0
             const isPopping = popEmoji === emoji
             return (
               <button
@@ -113,13 +140,13 @@ export default function ConfessionCard({ confession, featured = false, onReact }
                   cursor: reacted ? 'default' : 'pointer',
                   display: 'flex', alignItems: 'center', gap: 4,
                   color: 'rgba(255,255,255,0.8)',
-                  transition: 'transform 0.15s ease, background 0.2s ease',
+                  transition: 'background 0.2s ease',
                   transform: isPopping ? 'scale(1.3)' : 'scale(1)',
                   fontFamily: "'Sora', sans-serif",
                 }}
               >
                 <span style={{ fontSize: 14 }}>{emoji}</span>
-                <span style={{ fontSize: 12, fontWeight: 600 }}>{formatNum(count)}</span>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>{formatNum(counts[key])}</span>
               </button>
             )
           })}
@@ -130,8 +157,7 @@ export default function ConfessionCard({ confession, featured = false, onReact }
           style={{
             background: copied ? 'rgba(80,200,120,0.12)' : 'rgba(255,193,7,0.08)',
             border: copied ? '1px solid rgba(80,200,120,0.3)' : '1px solid rgba(255,193,7,0.22)',
-            borderRadius: 20,
-            padding: '6px 13px',
+            borderRadius: 20, padding: '6px 13px',
             cursor: 'pointer',
             color: copied ? '#50C878' : '#FFC107',
             fontSize: 12, fontWeight: 700,
